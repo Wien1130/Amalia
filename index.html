@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Змейка для Амалии 🐍💖</title>
+<style>
+  :root{
+    --pink-1:#ffe6f4;
+    --pink-2:#ffb3df;
+    --pink-3:#ff6fc4;
+    --pink-4:#ff3fae;
+    --dark:#6b1e53;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    height:100%;margin:0;background:
+      radial-gradient(1200px 800px at 20% 0%, var(--pink-1), transparent 60%),
+      radial-gradient(1200px 800px at 80% 100%, var(--pink-2), transparent 60%),
+      linear-gradient(180deg, #fff0f7, #ffd9ef 60%, #ffc4e7);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+    color: var(--dark);
+  }
+  .wrap{max-width:900px;margin:0 auto;padding:16px; display:flex; flex-direction:column; gap:12px}
+  header{
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    background: linear-gradient(135deg, #fff, #ffe3f4);
+    border:2px solid var(--pink-3); border-radius:16px; padding:10px 12px;
+    box-shadow: 0 8px 24px rgba(255, 105, 180, .25);
+  }
+  .title{display:flex;align-items:center;gap:10px;font-weight:800}
+  .title .badge{
+    background:linear-gradient(135deg, var(--pink-3), var(--pink-4));
+    color:white; padding:6px 10px; border-radius:999px; font-size:12px; letter-spacing:.3px
+  }
+  .stats{display:flex; gap:16px; align-items:center; flex-wrap:wrap}
+  .stat{
+    background:#fff; border:2px solid var(--pink-2); border-radius:12px; padding:6px 10px; min-width:84px; text-align:center
+  }
+  .controls{display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  button{
+    border:none; border-radius:12px; padding:10px 14px; font-weight:700;
+    background:linear-gradient(135deg, #fff, #ffe6f4); color:var(--dark);
+    border:2px solid var(--pink-3); cursor:pointer;
+    box-shadow: 0 6px 16px rgba(255, 105, 180, .25);
+    transition: transform .05s ease;
+  }
+  button:active{ transform: translateY(1px) }
+  #gamePanel{
+    background:linear-gradient(180deg, #fff, #ffeaf6);
+    border:3px solid var(--pink-4); border-radius:18px; padding:10px;
+    box-shadow: 0 16px 40px rgba(209, 30, 167, .2);
+  }
+  #canvasWrap{position:relative}
+  canvas{
+    display:block; width:100%; height:auto;
+    background:
+      radial-gradient(1000px 600px at 30% 20%, #fff6fb, #ffe6f4 60%),
+      repeating-linear-gradient(45deg, #ffdff1, #ffdff1 10px, #ffe9f6 10px, #ffe9f6 20px);
+    border-radius:12px; border:2px solid var(--pink-2);
+  }
+  .pad{ margin-top:10px; display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; user-select:none }
+  .pad .empty{visibility:hidden}
+  .pad button{padding:14px 0; font-size:18px}
+  .legend{ font-size:12px; opacity:.8; text-align:center }
+  @media (min-width:720px){ .pad{display:none} }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="title">
+        <div style="font-size:22px">🐍 Змейка для Амалии</div>
+        <div class="badge">С любовью 💖</div>
+      </div>
+      <div class="stats">
+        <div class="stat">Счёт: <span id="score">0</span></div>
+        <div class="stat">Рекорд: <span id="high">0</span></div>
+        <div class="stat">Скорость: <span id="spd">0.5x</span></div>
+      </div>
+      <div class="controls">
+        <button id="btnPause">⏸ Пауза</button>
+        <button id="btnNew">🆕 Новая игра</button>
+      </div>
+    </header>
+
+    <div id="gamePanel">
+      <div id="canvasWrap">
+        <canvas id="game" width="600" height="600" aria-label="Игровое поле"></canvas>
+      </div>
+      <div class="legend">Управление: стрелки / WASD • На телефоне — свайпы или кнопки</div>
+      <div class="pad" aria-label="Экранные кнопки">
+        <div class="empty"></div>
+        <button data-dir="up">⬆️</button>
+        <div class="empty"></div>
+        <button data-dir="left">⬅️</button>
+        <button data-dir="down">⬇️</button>
+        <button data-dir="right">➡️</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ===== Настройки =====
+  const GRID = 6;              // было 20 → теперь меньше (клетки крупнее ~3x)
+  const BASE_SPEED_MS = 320;   // было 160 → теперь в 2 раза медленнее
+  const MIN_SPEED_MS  = 180;   // минимум скорости (чтобы не слишком ускорялось)
+  const SPEED_STEP_MS = 6;
+
+  const COLORS = {
+    snakeBody: "#ff8fcf",
+    snakeHead: "#ff3fae",
+    snakeStroke: "#d11ea7",
+    boardBorder: "#ffb3df"
+  };
+
+  const PICKUPS = [
+    { type: "unicorn", emoji: "🦄", score: 1, grow: 1, weight: 75, speedDelta: -SPEED_STEP_MS },
+    { type: "princess", emoji: "👸", score: 5, grow: 2, weight: 15, speedDelta: -SPEED_STEP_MS*2 },
+    { type: "fairy",    emoji: "🧚", score: 3, grow: 1, weight: 10, speedMultiplier: 0.8, effectMs: 6000 }
+  ];
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const scoreEl = document.getElementById("score");
+  const highEl = document.getElementById("high");
+  const spdEl = document.getElementById("spd");
+  const btnPause = document.getElementById("btnPause");
+  const btnNew = document.getElementById("btnNew");
+  const dpad = document.querySelectorAll(".pad button[data-dir]");
+
+  // Загружаем фото Амалии
+  const headImg = new Image();
+  headImg.src = "amalia.png";
+
+  let cell;
+  let snake;
+  let dir;
+  let pendingDir;
+  let food;
+  let score;
+  let high = Number(localStorage.getItem("unicorn_snake_high") || 0);
+  let intervalMs;
+  let timer = null;
+  let paused = false;
+  let speedMul = 1.0;
+  let speedMulTimeout = null;
+
+  highEl.textContent = high;
+
+  function fitCanvas() {
+    const wrap = document.getElementById("canvasWrap");
+    const size = Math.min(wrap.clientWidth, Math.max(320, window.innerHeight - 280));
+    canvas.width = size;
+    canvas.height = size;
+    cell = Math.floor(size / GRID);
+  }
+  window.addEventListener("resize", () => { fitCanvas(); draw(); });
+  fitCanvas();
+
+  function newGame() {
+    stopLoop();
+    score = 0;
+    intervalMs = BASE_SPEED_MS;
+    speedMul = 1.0;
+    clearTimeout(speedMulTimeout); speedMulTimeout = null;
+    scoreEl.textContent = score; updateSpeedLabel();
+
+    const sx = Math.floor(GRID/2), sy = Math.floor(GRID/2);
+    snake = [{x:sx, y:sy}, {x:sx-1, y:sy}, {x:sx-2, y:sy}];
+    dir = {x:1, y:0}; pendingDir = null;
+    food = spawnFood();
+
+    paused = false; btnPause.textContent = "⏸ Пауза";
+    startLoop(); draw();
+  }
+
+  function startLoop(){ timer = setInterval(step, Math.max(30, intervalMs*speedMul)); }
+  function stopLoop(){ if (timer) clearInterval(timer); timer = null; }
+  function restartLoopForSpeed(){ if (!paused){ stopLoop(); startLoop(); } }
+
+  function step() {
+    if (pendingDir){ dir = pendingDir; pendingDir = null; }
+    const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+    if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) return gameOver();
+    if (snake.some(seg => seg.x === head.x && seg.y === head.y)) return gameOver();
+
+    snake.unshift(head);
+
+    let grow = 0;
+    if (food && head.x === food.x && head.y === food.y) {
+      const item = food.item;
+      score += item.score; scoreEl.textContent = score;
+
+      grow += item.grow || 0;
+      if (item.speedDelta){
+        intervalMs = Math.max(MIN_SPEED_MS, intervalMs + item.speedDelta);
+        updateSpeedLabel(); restartLoopForSpeed();
+      }
+      if (item.speedMultiplier){
+        speedMul = Math.max(0.6, (speedMul * item.speedMultiplier));
+        updateSpeedLabel(); restartLoopForSpeed();
+        clearTimeout(speedMulTimeout);
+        speedMulTimeout = setTimeout(()=>{ speedMul = 1.0; updateSpeedLabel(); restartLoopForSpeed(); }, item.effectMs || 5000);
+      }
+
+      food = spawnFood();
+    }
+
+    if (grow === 0) snake.pop(); else for (let i=1;i<grow;i++) snake.unshift({x: head.x, y: head.y});
+
+    draw();
+  }
+
+  function gameOver(){
+    stopLoop();
+    if (score > high){ high = score; localStorage.setItem("unicorn_snake_high", String(high)); highEl.textContent = high; }
+    draw(true);
+  }
+
+  function draw(isGameOver=false) {
+    const size = cell;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = COLORS.boardBorder;
+    ctx.strokeRect(1,1,GRID*size-2,GRID*size-2); ctx.restore();
+
+    if (food) {
+      const cx = food.x*size + size/2;
+      const cy = food.y*size + size*0.75;
+      ctx.font = `${Math.floor(size*0.9)}px system-ui, Apple Color Emoji, Segoe UI Emoji`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(food.item.emoji, cx, cy);
+    }
+
+    for (let i=snake.length-1; i>=1; i--){
+      const s = snake[i];
+      ctx.fillStyle = COLORS.snakeBody;
+      ctx.fillRect(s.x*size, s.y*size, size, size);
+      ctx.strokeStyle = COLORS.snakeStroke; ctx.strokeRect(s.x*size, s.y*size, size, size);
+    }
+
+    if (snake.length > 0) {
+      const h = snake[0];
+      if (headImg.complete) {
+        ctx.drawImage(headImg, h.x*size, h.y*size, size, size);
+        ctx.strokeStyle = COLORS.snakeStroke; ctx.lineWidth = 2;
+        ctx.strokeRect(h.x*size, h.y*size, size, size);
+      } else {
+        ctx.fillStyle = COLORS.snakeHead;
+        ctx.fillRect(h.x*size, h.y*size, size, size);
+      }
+    }
+
+    if (isGameOver) {
+      ctx.save();
+      ctx.fillStyle = "rgba(255,255,255,.8)";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "#d11ea7";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.font = `700 ${Math.floor(canvas.width*0.06)}px system-ui`;
+      ctx.fillText("ИГРА ОКОНЧЕНА", canvas.width/2, canvas.height/2 - 20);
+      ctx.fillStyle = "#6b1e53";
+      ctx.font = `500 ${Math.floor(canvas.width*0.035)}px system-ui`;
+      ctx.fillText(`Счёт: ${score}  •  Рекорд: ${high}`, canvas.width/2, canvas.height/2 + 16);
+      ctx.font = `500 ${Math.floor(canvas.width*0.03)}px system-ui`;
+      ctx.fillText("Нажми «Новая игра» или R", canvas.width/2, canvas.height/2 + 48);
+      ctx.restore();
+    }
+  }
+
+  function spawnFood(){
+    const occupied = new Set(snake.map(s => s.x + "," + s.y));
+    let pos;
+    do { pos = { x: Math.floor(Math.random()*GRID), y: Math.floor(Math.random()*GRID) }; }
+    while (occupied.has(pos.x+","+pos.y));
+    const item = PICKUPS[Math.floor(Math.random()*PICKUPS.length)];
+    return { x: pos.x, y: pos.y, item };
+  }
+
+  function setDirection(nx, ny) {
+    if (nx === -dir.x && ny === -dir.y) return;
+    if (pendingDir) return;
+    pendingDir = {x:nx, y:ny};
+  }
+
+  document.addEventListener("keydown", (e)=>{
+    const k = e.key.toLowerCase();
+    if (k === "arrowup" || k === "w") setDirection(0, -1);
+    else if (k === "arrowdown" || k === "s") setDirection(0, 1);
+    else if (k === "arrowleft" || k === "a") setDirection(-1, 0);
+    else if (k === "arrowright" || k === "d") setDirection(1, 0);
+    else if (k === " "){ togglePause(); }
+    else if (k === "r"){ newGame(); }
+  });
+
+  btnPause.addEventListener("click", togglePause);
+  btnNew.addEventListener("click", newGame);
+
+  function togglePause(){
+    paused = !paused;
+    if (paused){
+      stopLoop();
+      btnPause.textContent = "▶️ Продолжить";
+      ctx.save(); ctx.fillStyle = "rgba(255,255,255,.6)";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "#6b1e53";
+      ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.font = `700 ${Math.floor(canvas.width*0.05)}px system-ui`;
+      ctx.fillText("Пауза", canvas.width/2, canvas.height/2);
+      ctx.restore();
+    } else {
+      btnPause.textContent = "⏸ Пауза";
+      restartLoopForSpeed(); draw();
+    }
+  }
+
+  function updateSpeedLabel(){
+    const eff = (BASE_SPEED_MS / Math.max(30, intervalMs)) * speedMul / 2;
+    spdEl.textContent = eff.toFixed(2) + "x";
+  }
+
+  newGame();
+})();
+</script>
+</body>
+</html>
